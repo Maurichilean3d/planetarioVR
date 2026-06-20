@@ -3,10 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planetario VR - Three.js</title>
+    <title>Milky Way VR - Three.js</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; }
         canvas { display: block; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: rgba(255, 255, 255, 0.7);
+            font-family: sans-serif;
+            pointer-events: none;
+        }
     </style>
     <script type="importmap">
         {
@@ -18,82 +27,143 @@
     </script>
 </head>
 <body>
+    <div id="info">Entra en VR para ver la Vía Láctea</div>
 
     <script type="module">
         import * as THREE from 'three';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
 
-        let scene, camera, renderer;
-        let sun, earth, earthOrbitParent;
+        let scene, camera, renderer, galaxy;
 
         init();
-        animate();
 
         function init() {
-            // 1. Crear la Escena
+            // 1. Configuración principal
             scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x000005); // Espacio profundo, no negro puro
+            scene.fog = new THREE.FogExp2(0x000005, 0.0015); // Niebla para difuminar estrellas lejanas
 
-            // 2. Crear la Cámara
-            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 1000);
-            // Posicionamos la cámara un poco atrás y arriba para ver el sistema al iniciar
-            camera.position.set(0, 1.6, 5); 
-
-            // 3. Crear el Renderizador con soporte WebXR
-            renderer = new THREE.WebGLRenderer({ antialias: true });
+            camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+            
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.xr.enabled = true; // ¡CRUCIAL para Meta Quest!
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.xr.enabled = true;
             document.body.appendChild(renderer.domElement);
-
-            // 4. Añadir el botón de Entrar a VR
             document.body.appendChild(VRButton.createButton(renderer));
 
-            // 5. Iluminación
-            const ambientLight = new THREE.AmbientLight(0x333333);
+            // 2. Generación de la Vía Láctea (Procedural)
+            createRealisticMilkyWay();
+
+            // 3. Luces ambientales mínimas (opcional si añades objetos luego)
+            const ambientLight = new THREE.AmbientLight(0x111122);
             scene.add(ambientLight);
 
-            const sunLight = new THREE.PointLight(0xffffff, 3, 100);
-            scene.add(sunLight);
-
-            // 6. Fondo de estrellas (Espacio)
-            createStars();
-
-            // 7. Crear los Astros
-            // El Sol
-            const sunGeometry = new THREE.SphereGeometry(0.8, 32, 32);
-            const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffd700 }); // Brilla por sí mismo
-            sun = new THREE.Mesh(sunGeometry, sunMaterial);
-            sun.position.set(0, 1.6, 0); // Altura de los ojos aprox en VR (1.6m)
-            scene.add(sun);
-
-            // Pivote para la órbita de la Tierra
-            earthOrbitParent = new THREE.Group();
-            earthOrbitParent.position.copy(sun.position);
-            scene.add(earthOrbitParent);
-
-            // La Tierra
-            const earthGeometry = new THREE.SphereGeometry(0.3, 32, 32);
-            const earthMaterial = new THREE.MeshStandardMaterial({ color: 0x0077ff, roughness: 0.8 });
-            earth = new THREE.Mesh(earthGeometry, earthMaterial);
-            earth.position.set(3, 0, 0); // Distancia del Sol
-            earthOrbitParent.add(earth);
-
-            // Manejo de cambio de tamaño de pantalla
             window.addEventListener('resize', onWindowResize);
+            renderer.setAnimationLoop(render);
         }
 
-        function createStars() {
-            const starsGeometry = new THREE.BufferGeometry();
-            const starsCount = 2000;
-            const starPositions = new Float32Array(starsCount * 3);
+        function createRealisticMilkyWay() {
+            const starsCount = 100000; // 100 mil estrellas
+            const geometry = new THREE.BufferGeometry();
+            
+            const positions = new Float32Array(starsCount * 3);
+            const colors = new Float32Array(starsCount * 3);
+            const sizes = new Float32Array(starsCount);
 
-            for (let i = 0; i < starsCount * 3; i++) {
-                starPositions[i] = (Math.random() - 0.5) * 100;
+            // Colores del núcleo (cálido) y los brazos (frío)
+            const colorCore = new THREE.Color(0xffddaa); 
+            const colorArms = new THREE.Color(0x4466ff);
+
+            for(let i = 0; i < starsCount; i++) {
+                const i3 = i * 3;
+
+                // Distribución matemática para simular un disco galáctico
+                // r se concentra más hacia el centro usando Math.pow
+                const r = 800 * Math.pow(Math.random(), 3); 
+                const theta = Math.random() * Math.PI * 2;
+                
+                // El grosor del disco galáctico disminuye a medida que te alejas del centro
+                const ySpread = Math.max(2, 60 - (r * 0.1)); 
+                const y = (Math.random() - 0.5) * (Math.random() * ySpread);
+
+                let x = r * Math.cos(theta);
+                let z = r * Math.sin(theta);
+
+                // Rotación espiral para simular brazos (suave)
+                const spiralAngle = r * 0.005;
+                const finalX = x * Math.cos(spiralAngle) - z * Math.sin(spiralAngle);
+                const finalZ = x * Math.sin(spiralAngle) + z * Math.cos(spiralAngle);
+
+                // Inclinación de la galaxia para que se vea cruzando el cielo
+                const tilt = 0.6; // Inclinación en radianes
+                const tiltedY = y * Math.cos(tilt) - finalZ * Math.sin(tilt);
+                const tiltedZ = y * Math.sin(tilt) + finalZ * Math.cos(tilt);
+
+                positions[i3] = finalX;
+                positions[i3 + 1] = tiltedY;
+                positions[i3 + 2] = tiltedZ;
+
+                // Interpolar color basado en la distancia al centro
+                const mixedColor = colorCore.clone().lerp(colorArms, Math.min(1.0, r / 300));
+                
+                // Variación de brillo aleatoria
+                const brightness = 0.5 + Math.random() * 0.5;
+                colors[i3] = mixedColor.r * brightness;
+                colors[i3 + 1] = mixedColor.g * brightness;
+                colors[i3 + 2] = mixedColor.b * brightness;
+
+                // Tamaño de las estrellas
+                sizes[i] = (Math.random() * 2.0) + 0.5;
             }
 
-            starsGeometry.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
-            const starsMaterial = new THREE.PointsMaterial({ color: 0xffffff, size: 0.1 });
-            const starField = new THREE.Points(starsGeometry, starsMaterial);
-            scene.add(starField);
+            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+            // 3. Shader Material para estrellas circulares y brillantes (Mejor que PointsMaterial)
+            const starMaterial = new THREE.ShaderMaterial({
+                uniforms: {
+                    time: { value: 0 }
+                },
+                vertexShader: `
+                    attribute float size;
+                    attribute vec3 color;
+                    varying vec3 vColor;
+                    void main() {
+                        vColor = color;
+                        // Ajustar tamaño por perspectiva
+                        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+                        gl_PointSize = size * (400.0 / -mvPosition.z);
+                        gl_Position = projectionMatrix * mvPosition;
+                    }
+                `,
+                fragmentShader: `
+                    varying vec3 vColor;
+                    void main() {
+                        // Crear un círculo suave en lugar de un cuadrado
+                        vec2 xy = gl_PointCoord.xy - vec2(0.5);
+                        float ll = length(xy);
+                        if(ll > 0.5) discard;
+                        
+                        // Efecto de brillo radial
+                        float alpha = 1.0 - (ll * 2.0);
+                        alpha = pow(alpha, 1.5);
+                        
+                        gl_FragColor = vec4(vColor, alpha);
+                    }
+                `,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false
+            });
+
+            galaxy = new THREE.Points(geometry, starMaterial);
+            
+            // Ubicamos al observador lejos del centro, en uno de los brazos galácticos
+            galaxy.position.set(-150, -20, -100); 
+            
+            scene.add(galaxy);
         }
 
         function onWindowResize() {
@@ -102,19 +172,11 @@
             renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        // 8. Bucle de Animación (Obligatorio usar setAnimationLoop para WebXR)
-        function animate() {
-            renderer.setAnimationLoop(render);
-        }
-
         function render() {
-            // Rotación de los astros sobre su propio eje
-            sun.rotation.y += 0.002;
-            earth.rotation.y += 0.01;
-
-            // Rotación de la órbita (La Tierra gira alrededor del Sol)
-            earthOrbitParent.rotation.y += 0.005;
-
+            // Rotación extremadamente lenta para dar sensación de inmensidad
+            if (galaxy) {
+                galaxy.rotation.y -= 0.0001;
+            }
             renderer.render(scene, camera);
         }
     </script>
